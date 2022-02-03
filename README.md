@@ -114,7 +114,9 @@ wget -O metrics-server.yaml https://github.com/kubernetes-sigs/metrics-server/re
 
 vim +134 metrics-server.yaml
      - args:
+        (...)
         - --kubelet-insecure-tls
+        (...)
 
 kubectl apply -f metrics-server.yaml
 ```
@@ -344,6 +346,8 @@ Login Succeeded
 
 ## [docker] minio
 
+minio 는 metadata 혹은 artifact 와 같이 용량이 큰 바이너리 데이터를 저장하는 장소로 사용된다. Storage Class 를 사용할 수도 있지만 Minio 는 UI 및 mc 라는 client 가 잘되어 있고, 파이썬에서 코드 몇줄로 연동이 가능하다는 장점이 있다.
+
 1) minio docker scripts 생성
 
 ```bash
@@ -416,5 +420,235 @@ kubectl port-forward svc/argo-cd-argocd-server 8080:443
 kubectl get pods -l app.kubernetes.io/name=argocd-server -o name | cut -d'/' -f 2
 ```
 
-## [docker] Elasticsearch + Kibana + Logstash
-> 작성중
+## [docker] Elasticsearch + Kibana
+
+0) hosts 파일 생성
+
+```bash
+cat <<EOF | tee hosts
+elk-n1
+elk-n2
+elk-n3
+EOF
+```
+
+2) docker image build
+
+1-1) 노드간 ssl 통신을 위한 elastic-certificates 생성
+
+* https://www.elastic.co/guide/en/elasticsearch/reference/current/configuring-tls.html
+* https://www.elastic.co/guide/en/kibana/master/configuring-tls.html
+
+```bash
+docker run \
+  -it --rm \
+  -v "$(pwd)/certs:/mnt:rw" \
+  docker.elastic.co/elasticsearch/elasticsearch:7.17.0 \
+    bin/elasticsearch-certutil ca \
+    && bin/elasticsearch-certutil cert --ca elastic-stack-ca.p12 \
+    && openssl pkcs12 -in elastic-certificates.p12 -cacerts -nokeys -out elasticsearch-ca.pem \
+    && bin/elasticsearch-certutil ca --pem \
+    && mv *.p12 *.pem /mnt/
+```
+
+2) elasticsearch
+
+* https://logz.io/blog/language-analyzers-tokenizers-not-built-elasticsearch-where-find-them/
+ 
+```bash
+cat <<EOF | tee Dockerfile
+FROM docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+
+RUN echo "analysis plugins: BASE_IMAGE " \
+    && bin/elasticsearch-plugin install analysis-nori \
+    && bin/elasticsearch-plugin install analysis-kuromoji \
+    && bin/elasticsearch-plugin install analysis-smartcn \
+    && bin/elasticsearch-plugin install analysis-icu
+
+RUN echo "repository plugins" \
+   && bin/elasticsearch-plugin install --batch repository-hdfs \
+   && bin/elasticsearch-plugin install --batch repository-s3
+
+ADD certs/* /usr/share/elasticsearch/config/certs/
+
+RUN chown -R elasticsearch /usr/share/elasticsearch/config/certs/
+EOF
+
+docker build -t mydomain.com:5000/elk/elasticsearch:7.17.0 .
+```
+
+3) kibana
+
+```bash
+cat <<EOF | tee Dockerfile
+FROM docker.elastic.co/kibana/kibana:7.17.0
+
+ADD certs/* /usr/share/kibana/config/elasticsearchcerts/
+
+USER root
+
+RUN chown -R kibana /usr/share/kibana/config/elasticsearchcerts/
+
+USER kibana
+EOF
+
+docker build -t mydomain.com:5000/elk/kibana:7.17.0 .
+```
+
+4) install elasticsearch
+
+4-1) vm.max_map_count 설정
+
+```bash
+BATCH=set_vm_max_map_count.sh
+
+cat <<EOF | tee ${BATCH}
+sudo swapoff -a
+echo vm.max_map_count=262144 | sudo tee -a /etc/sysctl.conf
+sudo sysctl --system
+EOF
+
+cat nodes | xargs -I{} scp ${BATCH} {}: 
+cat nodes | xargs -I{} ssh {} "bash ${BATCH}" 
+```
+
+4-2) docker image push
+
+```bash
+docker save mydomain.com:5000/elk/elasticsearch:7.17.0 | gzip - > elasticsearch-7.17.0.tar.gz
+
+cat nodes | xargs -I{} scp elasticsearch-7.17.0.tar.gz {}:
+cat nodes | xargs -I{} ssh {} "docker load < elasticsearch-7.17.0.tar.gz"
+```
+
+4-3) data path permission fix
+
+```bash
+cat nodes | xargs -I{} ssh {} "sudo mkdir -p /data/elasticsearch"
+cat nodes | xargs -I{} ssh {} "sudo chown -R 1000:1000 /data/elasticsearch"
+```
+
+4-4) elasticsearch docker command
+
+```bash
+BATCH=start-elasticsearch.sh
+
+cat <<EOF | tee ${BATCH}
+#!/usr/bin/env bash
+
+NODE_NAME="\$1"
+
+CLS_NAME="crawler-dev"
+CONTAINER_NAME="elasticsearch"
+IMAGE="mydomain.com:5000/elk/elasticsearch:7.17.0"
+ELASTIC_USERNAME="elastic"
+ELASTIC_PASSWORD="mypassword"
+ES_JAVA_OPTS="-Xms8g -Xmx8g"
+SEED_HOSTS="elk-n1,elk-n2,elk-n3"
+WHITELIST="mydomain.com:9200"
+DATA_HOME="/data/elasticsearch"
+
+docker run \\
+  -d --restart=unless-stopped \\
+  --privileged \\
+  --network host \\
+  --ulimit "memlock=-1:-1" \\
+  --name "\${CONTAINER_NAME}" \\
+  --hostname "\${NODE_NAME}" \\
+  -e "HOSTNAME=\${NODE_NAME}" \\
+  -e "ELASTIC_USERNAME=\${ELASTIC_USERNAME}" \\
+  -e "ELASTIC_PASSWORD=\${ELASTIC_PASSWORD}" \\
+  -e "node.name=\${NODE_NAME}" \\
+  -e "ES_JAVA_OPTS=\${ES_JAVA_OPTS}" \\
+  -e "discovery.seed_hosts=\${SEED_HOSTS}" \\
+  -e "discovery.zen.minimum_master_nodes=3" \\
+  -e "cluster.name=\${CLS_NAME}" \\
+  -e "cluster.publish.timeout=90s" \\
+  -e "cluster.initial_master_nodes=\${SEED_HOSTS}" \\
+  -e "transport.tcp.compress=true" \\
+  -e "network.host=0.0.0.0" \\
+  -e "node.master=true" \\
+  -e "node.ingest=true" \\
+  -e "node.data=true" \\
+  -e "node.ml=false" \\
+  -e "node.remote_cluster_client=true" \\
+  -e "xpack.security.enabled=true" \\
+  -e "xpack.security.http.ssl.enabled=true" \\
+  -e "xpack.security.http.ssl.keystore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
+  -e "xpack.security.http.ssl.truststore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
+  -e "xpack.security.transport.ssl.enabled=true" \\
+  -e "xpack.security.transport.ssl.verification_mode=certificate" \\
+  -e "xpack.security.transport.ssl.keystore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
+  -e "xpack.security.transport.ssl.truststore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
+  -e "reindex.remote.whitelist=\${WHITELIST}" \\
+  -v "\${DATA_HOME}/snapshot:/snapshot:rw" \\
+  -v "\${DATA_HOME}/data:/usr/share/elasticsearch/data:rw" \\
+  \${IMAGE}
+EOF
+
+cat nodes | xargs -I{} scp ${BATCH} {}:
+cat nodes | xargs -I{} echo "ssh {} \"bash ${BATCH} {} ; docker ps\""
+```
+
+4-5) api test
+
+```bash
+❯ curl -k -u elastic:mypassword https://mydomain.com:9200/
+```
+
+5) kibana install
+
+5-1) docker image pull & push
+
+```bash
+docker save mydomain.com:5000/elk/kibana:7.17.0 | gzip - > kibana-7.17.0.tar.gz
+
+cat nodes | grep kibana | xargs -I{} scp kibana-7.17.0.tar.gz {}:
+cat nodes | grep kibana | xargs -I{} ssh {} "docker load < kibana-7.17.0.tar.gz"
+```
+
+5-2) kibana 암호 설정
+
+```bash
+curl -k -u elastic:mypassword -H 'Content-Type: application/json' -d '{"password": "mypassword#"}' \
+  https://mydomain.com:9200/_security/user/kibana_system/_password 
+```
+
+5-3) start kibana
+
+```bash
+BATCH=start-kibana.sh
+
+cat <<EOF | tee ${BATCH}
+#!/usr/bin/env bash
+
+CONTAINER_NAME="kibana"
+ELASTICSEARCH_USERNAME="kibana_system"
+ELASTICSEARCH_PASSWORD="mypassword"
+ELASTICSEARCH_HOSTS="https://mydomain.com:9200"
+IMAGE="mydomain.com:5000/elk/kibana:7.17.0"
+
+docker run \\
+  -d --restart=unless-stopped \\
+  --name "\${CONTAINER_NAME}" \\
+  --hostname "\${CONTAINER_NAME}" \\
+  --network host \\
+  --add-host "mydomain.com:172.0.0.10" \\
+  -e "SERVER_HOST=0.0.0.0" \\
+  -e "ELASTICSEARCH_HOSTS=\${ELASTICSEARCH_HOSTS}" \\
+  -e "ELASTICSEARCH_USERNAME=\${ELASTICSEARCH_USERNAME}" \\
+  -e "ELASTICSEARCH_PASSWORD=\${ELASTICSEARCH_PASSWORD}" \\
+  -e "MONITORING_ENABLED=true" \\
+  -e "NODE_OPTIONS=--max-old-space-size=1800" \\
+  -e "ELASTICSEARCH_SSL_ENABLED=true" \\
+  -e "ELASTICSEARCH_SSL_VERIFICATIONMODE=certificate" \\
+  -e "ELASTICSEARCH_SSL_KEYSTORE_PATH=/usr/share/kibana/config/elasticsearchcerts/elastic-certificates.p12" \\
+  -e "ELASTICSEARCH_SSL_KEYSTORE_PASSWORD=\"\"" \\
+  -e "SERVER_SSL_ENABLED=true" \\
+  -e "SERVER_SSL_KEYSTORE_PATH=/usr/share/kibana/config/elasticsearchcerts/elastic-certificates.p12" \\
+  -e "SERVER_SSL_KEYSTORE_PASSWORD=\"\"" \\
+  \${IMAGE}
+EOF
+
+cat nodes | grep kibana | xargs -I{} scp ${BATCH} {}:
+```
