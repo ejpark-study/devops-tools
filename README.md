@@ -1,11 +1,18 @@
 # My Devops Tools (Environments): with Kubernetes
 
 쿠버네티스 환경에서 어플리케이션을 개발하고, 개발된 어플리케이션을 서비스하는 환경을 구축하는 방법에 관한 문서이다.
-(2022년 KANS 1기 스터디(HTTP://KANS.CloudNeta.net) **중간 과제**로 작성한다. 이후 랩 세미나 자료로 사용할 예정이다.)
+(2022년 KANS 1기 스터디(HTTP://KANS.CloudNeta.net) **중간 과제**로 작성한다. 이후 랩 스터디 자료로 사용할 예정이다.)
 
 ![img.png](images/2022-02-03T1450.png)
 
-## Powershell + Windows terminal + Oh my posh + Nerd Fonts
+* Application Development Flow
+  * 어플리케이션을 개발해서 gitlab 에 업로드하면, goCD 가 코드를 받아서 도커 이미지로 빌드한다. 
+  * 빌드된 도커 이미지를 harbor 에 업로드하면 argoCD가 받아서 쿠버네티스로 배포한다. 
+  * 운영중 생기는 어플리케이션 로그는 Elasticsearch 에 저장하고, 저장된 로그를 Kibana Dashboard 로 확인한다.
+
+※ OpenEBS 를 제외한 여러 조합으로 실험해 봤는데, (DB 와 같이) 상태가 있어야 하는 서비스는 docker 혹은 docker-compose 로 실행하고, 어플리케이션만 상태 없이 쿠버네티스로 실행한다.
+
+## [사전 작업] Powershell + Windows terminal + Oh my posh + Nerd Fonts
 
 ![img.png](images/2022-02-03T1427.png)
 
@@ -31,7 +38,7 @@ Install-Module -Name Terminal-Icons -Repository PSGallery
 
 * 'Ctrl + ,' -> '프로필/기본값/모양/글꼴' -> 'DejaVuSansMono Nerd Font Mono' 선택 (4 에서 설치한 폰트 이름, 고정폭 폰트(Mono)를 선택한다.)
 
-8-1) $PROFILE 생성
+8-1) $PROFILE 생성 혹은 수정
 
 ```powershell
 code $PROFILE
@@ -261,4 +268,7 @@ mc alias list
 > 작성중
 
 ## [kubernetes] argoCD
+> 작성중
+
+## [docker] Elasticsearch + Kibana + Logstash
 > 작성중
