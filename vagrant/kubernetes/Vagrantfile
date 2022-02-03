@@ -1,0 +1,129 @@
+BOX_IMAGE = "ubuntu/focal64"
+BOX_VERSION = "20211026.0.0"
+
+HOST_IP_PREFIX = "192.168.10"
+HOST_SSH_PORT_PREFIX = 6100
+SETUP_HOME = "../setup"
+WORKSPACE_HOME = "../workspace"
+VAGRANT_HOME = File.join(File.expand_path(ENV['HOME'] || ENV['USERPROFILE'] || "~"), ".vagrant.d")
+VAGRANT_PRIVATE_KEY = "#{VAGRANT_HOME}/insecure_private_key"
+MAX_WORKER = 2
+VBOX_GROUP = "/kubernetes"
+
+KUBERNETES_VERSION = "1.23.3"
+KUBERNETES_MASTER = "192.168.10.10"
+KUBERNETES_SVC_CIDR = "10.50.0.0/16"
+KUBERNETES_POD_NETWORK_CIDR = "10.244.0.0/16"
+KUBERNETES_CONTEXT_NAME = "vagrant"
+
+Vagrant.configure("2") do |config|
+  config.vagrant.plugins = ["vagrant-disksize"]
+
+  # master node
+  config.vm.define "master" do |cfg|
+#     cfg.vm.box = "focal"
+    cfg.vm.box = BOX_IMAGE
+    cfg.vm.box_url = "https://app.vagrantup.com/ubuntu/boxes/focal64"
+    cfg.vm.box_version = BOX_VERSION
+
+    cfg.ssh.insert_key = false
+    cfg.ssh.forward_agent = true
+    cfg.ssh.private_key_path = [VAGRANT_PRIVATE_KEY, File.join(SETUP_HOME, "/skel/vagrant.key")]
+
+    cfg.disksize.size = '50GB'
+
+    cfg.vm.provider "virtualbox" do |vb|
+      vb.customize ["modifyvm", :id, "--groups", VBOX_GROUP]
+      vb.customize ["modifyvm", :id, "--nicpromisc2", "allow-all"]
+      vb.name = "master"
+      vb.gui = false
+      vb.cpus = 2
+      vb.memory = 2048
+      vb.linked_clone = true
+    end
+
+    cfg.vm.hostname = "master"
+
+    cfg.vm.synced_folder "./", "/vagrant", disabled: false
+    cfg.vm.synced_folder WORKSPACE_HOME, "/workspace", create: true, group: "vagrant", owner: "vagrant", SharedFoldersEnableSymlinksCreate: false
+
+    # network
+    cfg.vm.network "private_network", auto_config: true, ip: KUBERNETES_MASTER
+    cfg.vm.network "forwarded_port", guest: 22, host: "#{HOST_SSH_PORT_PREFIX}0", auto_correct: true, id: "ssh"
+
+    # skel
+    cfg.vm.provision "file", source: VAGRANT_PRIVATE_KEY, destination: "/tmp/skel/private_key"
+    cfg.vm.provision "file", source: "#{SETUP_HOME}/skel", destination: "/tmp/skel"
+    cfg.vm.provision "shell", privileged: true, inline: "rsync -av /tmp/skel/ /etc/skel/ && rm -rf /tmp/*"
+
+    # baseline
+    cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/apt-mirror.sh")
+    cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/baseline.sh")
+    cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/dev-env.sh")
+    cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/ssh-keypair.sh")
+
+    # docker, kubernetes
+    cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/docker.sh")
+    cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/kubernetes.sh"), args: [KUBERNETES_VERSION]
+    cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/kubernetes-utils.sh")
+
+    # user env.
+    cfg.vm.provision "shell", privileged: false, path: File.join(SETUP_HOME, "/user-env.sh")
+
+    # master
+    cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/init-master.sh"), args: [KUBERNETES_MASTER, KUBERNETES_SVC_CIDR, KUBERNETES_POD_NETWORK_CIDR, KUBERNETES_CONTEXT_NAME]
+  end
+
+  # worker node
+  (1..MAX_WORKER).each do |i|
+    config.vm.define "worker#{i}" do |cfg|
+      cfg.vm.box = BOX_IMAGE
+      cfg.vm.box_url = "https://app.vagrantup.com/ubuntu/boxes/focal64"
+      cfg.vm.box_version = BOX_VERSION
+
+      cfg.ssh.insert_key = false
+      cfg.ssh.forward_agent = true
+      cfg.ssh.private_key_path = [VAGRANT_PRIVATE_KEY, File.join(SETUP_HOME, "/skel/vagrant.key")]
+
+      cfg.disksize.size = '50GB'
+
+      cfg.vm.provider "virtualbox" do |vb|
+        vb.customize ["modifyvm", :id, "--groups", VBOX_GROUP]
+        vb.customize ["modifyvm", :id, "--nicpromisc2", "allow-all"]
+        vb.name = "worker#{i}"
+        vb.cpus = 2
+        vb.memory = 2048
+        vb.linked_clone = true
+      end
+
+      cfg.vm.hostname = "worker#{i}"
+
+      cfg.vm.synced_folder "./", "/vagrant", disabled: false
+
+      # network
+      cfg.vm.provision "file", source: VAGRANT_PRIVATE_KEY, destination: "/tmp/skel/private_key"
+      cfg.vm.network "private_network", auto_config: true, ip: "#{HOST_IP_PREFIX}.#{i + 11}"
+      cfg.vm.network "forwarded_port", guest: 22, host: "#{HOST_SSH_PORT_PREFIX}#{i}", auto_correct: true, id: "ssh"
+
+      # skel
+      cfg.vm.provision "file", source: "#{SETUP_HOME}/skel", destination: "/tmp/skel"
+      cfg.vm.provision "shell", privileged: true, inline: "rsync -av /tmp/skel/ /etc/skel/ && rm -rf /tmp/*"
+
+      # baseline
+      cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/apt-mirror.sh")
+      cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/baseline.sh")
+      cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/ssh-keypair.sh")
+
+      # docker, kubernetes
+      cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/docker.sh")
+      cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/kubernetes.sh"), args: [KUBERNETES_VERSION]
+
+      # worker
+      cfg.vm.provision :shell, privileged: true, inline: <<-SHELL
+        bash /vagrant/join.sh
+        echo 'Environment="KUBELET_EXTRA_ARGS=--node-ip=#{HOST_IP_PREFIX}.#{i + 11}"' | tee -a /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+        systemctl daemon-reload && systemctl restart kubelet
+      SHELL
+    end
+  end
+end
