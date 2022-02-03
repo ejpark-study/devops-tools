@@ -6,9 +6,9 @@
 ![img.png](images/2022-02-03T1450.png)
 
 * Application Development Flow
-  * 어플리케이션을 개발해서 gitlab 에 업로드하면, goCD 가 코드를 받아서 도커 이미지로 빌드한다. 
-  * 빌드된 도커 이미지를 harbor 에 업로드하면 argoCD가 받아서 쿠버네티스로 배포한다. 
-  * 운영중 생기는 어플리케이션 로그는 Elasticsearch 에 저장하고, 저장된 로그를 Kibana Dashboard 로 확인한다.
+  * 어플리케이션을 개발해서 gitlab 에 업로드 하면, goCD 가 코드를 받아서 도커 이미지로 빌드 한다. 
+  * 빌드된 이미지를 harbor 에 푸시 하면 argoCD가 받아서 쿠버네티스에 배포 한다. 
+  * 운영중 생기는 어플리케이션 로그는 Elasticsearch 에 저장 하고, 저장된 로그를 Kibana Dashboard 로 확인 한다.
 
 ※ OpenEBS 를 제외한 여러 조합으로 실험해 봤는데, (DB 와 같이) 상태가 있어야 하는 서비스는 docker 혹은 docker-compose 로 실행하고, 어플리케이션만 상태 없이 쿠버네티스로 실행한다.
 
@@ -110,7 +110,7 @@ cilium install
 metrics-server.yaml 파일의 134 번째 라인에 '--kubelet-insecure-tls'를 추가한다.
 
 ```bash
-wget https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml -O metrics-server.yaml
+wget -O metrics-server.yaml https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
 vim +134 metrics-server.yaml
      - args:
@@ -119,9 +119,128 @@ vim +134 metrics-server.yaml
 kubectl apply -f metrics-server.yaml
 ```
 
+## [kubernetes] ingress-controller
+
+```bash
+wget -O ingress-controller.yaml https://raw.githubusercontent.com/kubernetes/ingress-nginx/master/deploy/static/provider/baremetal/deploy.yaml
+
+#ingress-controller.yaml 에서 LoadBancer 옵션으로 변경한다.
+
+kubectl apply -f ingress-controller.yaml
+```
+
 ## [docker] gitlab
 
-> 작성중
+1) gitlab 용 certs 생성
+
+* https://docs.microsoft.com/ko-kr/azure/aks/ingress-own-tls
+ 
+```bash
+DNS_NAME=mydomain.com
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -subj "/CN=${DNS_NAME}/O=${DNS_NAME}-tls" \
+    -out ${DNS_NAME}.crt -keyout ${DNS_NAME}.key
+
+sudo mkdir -p /data/gitlab/config/ssl /data/gitlab-runner/config/certs
+
+sudo cp ${DNS_NAME}.* /data/gitlab/config/ssl
+sudo cp ${DNS_NAME}.* /data/gitlab-runner/config/certs
+```
+
+2) gitlab 실행 스크립트
+
+* https://twoseed.atlassian.net/wiki/spaces/OPS/pages/551256065/GitLab+Docker+Engine+-+Ubuntu+18.04
+
+```bash
+cat <<EOS | tee gitlab.sh 
+#!/usr/bin/env bash
+
+DNS_NAME=mydomain.com
+GITLAB_ROOT_PASSWORD=mypassword
+
+docker stop gitlab
+docker rm gitlab
+
+docker run \\
+  --detach --restart always \\
+  --name gitlab \\
+  --hostname gitlab \\
+  --publish 80:80 \\
+  --publish 443:443 \\
+  --add-host ${DNS_NAME}:172.19.178.114 \\
+  --env GITLAB_OMNIBUS_CONFIG="external_url 'https://${DNS_NAME}/'; gitlab_rails['lfs_enabled'] = true; letsencrypt['enable'] = false;" \\
+  --env GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD}" \\
+  --env GITLAB_TIMEZONE="Asia/Seoul" \\
+  --volume /data/gitlab/config:/etc/gitlab \\
+  --volume /data/gitlab/logs:/var/log/gitlab \\
+  --volume /data/gitlab/data:/var/opt/gitlab \\
+  gitlab/gitlab-ce:14.4.2-ce.0
+
+docker logs -f gitlab
+EOS
+
+chmod +x gitlab.sh
+
+docker exec -it gitlab /bin/bash
+```
+
+3-1) gitlab-runner 실행 스크립트 생성
+
+```bash
+cat <<EOS | tee gitlab-runner.sh 
+#!/usr/bin/env bash
+
+DNS_NAME=mydomain.com
+
+docker stop gitlab-runner
+docker rm gitlab-runner
+
+docker run \\
+    --detach --restart always \\
+    --name gitlab-runner \\
+    --hostname gitlab-runner \\
+    --privileged \\
+    --network host \\
+    --add-host mirror.kakao.com:113.29.189.165 \\
+    --add-host registry.npmjs.org:104.16.23.35 \\
+    --add-host ${DNS_NAME}:172.0.0.10 \\
+    --volume /var/run/docker.sock:/var/run/docker.sock \\
+    --volume /data/gitlab-runner/config:/etc/gitlab-runner \\
+    gitlab/gitlab-runner:latest
+
+docker logs -f gitlab-runner
+EOS
+
+chmod +x gitlab-runner.sh
+```
+
+3-2) gitlab-runner register (with docker sock)
+
+* https://gitlab.com/gitlab-org/gitlab-runner/-/issues/3748
+
+```bash
+DNS_NAME=mydomain.com
+REG_TOKEN=$(awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < /etc/ssl/certs/ca-certificates.crt)
+
+docker exec -it gitlab-runner \
+  gitlab-runner register \
+    --non-interactive \
+    --name runner \
+    --url https://${DNS_NAME} \
+    --registration-token ${REG_TOKEN} \
+    --executor "docker" \
+    --docker-image alpine:latest \
+    --run-untagged \
+    --locked="false" \
+    --docker-privileged \
+    --docker-pull-policy if-not-present \
+    --docker-network-mode host \
+    --docker-extra-hosts mirror.kakao.com:113.29.189.165 \
+    --docker-extra-hosts registry.npmjs.org:104.16.23.35 \
+    --add-host ${DNS_NAME}:172.0.0.10 \
+    --docker-network-mode host \
+    --docker-volumes '/var/run/docker.sock:/var/run/docker.sock'
+```
 
 ## [docker-compose] harbor
 
@@ -264,11 +383,38 @@ mc alias set wst http://mydomain.com:9000 admin mypassword
 mc alias list
 ```
 
-## [docker] goCD or [docker] gitlab-runner
-> 작성중
+## [kubernetes] goCD
+
+* https://www.gocd.org/download/#helm
+
+```bash
+helm repo add gocd https://gocd.github.io/helm-chart
+
+kubectl create ns gocd
+helm install gocd gocd/gocd --namespace gocd
+```
 
 ## [kubernetes] argoCD
-> 작성중
+
+* https://www.arthurkoziel.com/setting-up-argocd-with-helm/
+
+1) argo helm install
+
+```bash
+helm repo add argo-cd https://argoproj.github.io/argo-helm
+helm dep update charts/argo-cd/
+
+helm install argo-cd charts/argo-cd/
+```
+
+2) web ui
+
+```bash
+kubectl port-forward svc/argo-cd-argocd-server 8080:443
+
+# init admin password
+kubectl get pods -l app.kubernetes.io/name=argocd-server -o name | cut -d'/' -f 2
+```
 
 ## [docker] Elasticsearch + Kibana + Logstash
 > 작성중
