@@ -1,5 +1,10 @@
 # My Devops Tools (Environments): with Kubernetes
 
+쿠버네티스 환경에서 어플리케이션을 개발하고, 개발된 어플리케이션을 서비스하는 환경을 구축하는 방법에 관한 문서이다.
+(2022년 KANS 1기 스터디(HTTP://KANS.CloudNeta.net) **중간 과제**로 작성한다. 이후 랩 세미나 자료로 사용할 예정이다.)
+
+![img.png](images/2022-02-03T1450.png)
+
 ## Powershell + Windows terminal + Oh my posh + Nerd Fonts
 
 ![img.png](images/2022-02-03T1427.png)
@@ -24,7 +29,7 @@ Install-Module -Name Terminal-Icons -Repository PSGallery
 
 6) windows terminal 폰트 변경
 
-* 'Ctrl + ,' -> '프로필/기본값/모양/글꼴' -> 'DejaVuSansMono Nerd Font Mono' 선택
+* 'Ctrl + ,' -> '프로필/기본값/모양/글꼴' -> 'DejaVuSansMono Nerd Font Mono' 선택 (4 에서 설치한 폰트 이름, 고정폭 폰트(Mono)를 선택한다.)
 
 8-1) $PROFILE 생성
 
@@ -108,6 +113,8 @@ kubectl apply -f metrics-server.yaml
 ```
 
 ## [docker] gitlab
+
+> 작성중
 
 ## [docker-compose] harbor
 
@@ -251,5 +258,7 @@ mc alias list
 ```
 
 ## [docker] goCD or [docker] gitlab-runner
+> 작성중
 
 ## [kubernetes] argoCD
+> 작성중
