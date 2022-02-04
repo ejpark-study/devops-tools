@@ -13,10 +13,6 @@ git clone --depth=1 "https://github.com/zsh-users/zsh-syntax-highlighting.git" ~
 
 cat /etc/skel/.zshrc > ~/.zshrc
 
-# change user zsh
-sudo sed -i -e 's#/home/ubuntu:/bin/bash#/home/ubuntu:/usr/bin/zsh#' /etc/passwd
-sudo sed -i -e 's#/home/vagrant:/bin/bash#/home/vagrant:/usr/bin/zsh#' /etc/passwd
-
 # krew 설치
 krew install krew
 

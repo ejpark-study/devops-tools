@@ -131,7 +131,7 @@ wget -O ingress-controller.yaml https://raw.githubusercontent.com/kubernetes/ing
 kubectl apply -f ingress-controller.yaml
 ```
 
-## [docker] gitlab
+## [docker] gitlab & gitlab-runner
 
 1) gitlab 용 certs 생성
 
@@ -198,7 +198,7 @@ docker stop gitlab-runner
 docker rm gitlab-runner
 
 docker run \\
-    --detach --restart always \\
+    --detach --restart unless-stopped \\
     --name gitlab-runner \\
     --hostname gitlab-runner \\
     --privileged \\
@@ -222,7 +222,7 @@ chmod +x gitlab-runner.sh
 
 ```bash
 DNS_NAME=mydomain.com
-REG_TOKEN=$(awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < /etc/ssl/certs/ca-certificates.crt)
+REG_TOKEN=$(awk --volume cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < /etc/ssl/certs/ca-certificates.crt)
 
 docker exec -it gitlab-runner \
   gitlab-runner register \
@@ -344,7 +344,7 @@ Login Succeeded
 ❯ kubectl delete secret/harbor-secret
 ```
 
-## [docker] minio
+## [docker] minio & minio client
 
 minio 는 metadata 혹은 artifact 와 같이 용량이 큰 바이너리 데이터를 저장하는 장소로 사용된다. Storage Class 를 사용할 수도 있지만 Minio 는 UI 및 mc 라는 client 가 잘되어 있고, 파이썬에서 코드 몇줄로 연동이 가능하다는 장점이 있다.
 
@@ -358,16 +358,16 @@ docker stop minio
 docker rm minio
 
 docker run \\
-  -d --restart always \\
+  --detach --restart unless-stopped \\
   --name minio \\
   --hostname minio \\
   -p 9001:80 \\
   -p 9000:9000 \\
-  -v "/data/minio:/data:rw" \\
-  -e "MINIO_ROOT_USER=admin" \\
-  -e "MINIO_ROOT_PASSWORD=mypassword" \\
-  -v /etc/timezone:/etc/timezone:ro \\
-  -v /etc/localtime:/etc/localtime:ro \\
+  --env "MINIO_ROOT_USER=admin" \\
+  --env "MINIO_ROOT_PASSWORD=mypassword" \\
+  --volume "/data/minio:/data:rw" \\
+  --volume /etc/timezone:/etc/timezone:ro \\
+  --volume /etc/localtime:/etc/localtime:ro \\
   minio/minio:latest \\
     server --address "0.0.0.0:9000" --console-address "0.0.0.0:80" /data
 
@@ -387,15 +387,16 @@ mc alias set wst http://mydomain.com:9000 admin mypassword
 mc alias list
 ```
 
-## [kubernetes] goCD
+## [docker] goCD
 
-* https://www.gocd.org/download/#helm
+* https://www.gocd.org/download/#docker
+* https://hub.docker.com/r/gocd/gocd-server
 
 ```bash
-helm repo add gocd https://gocd.github.io/helm-chart
+GO_SERVER_URL=http://mydomain.com:8153
 
-kubectl create ns gocd
-helm install gocd gocd/gocd --namespace gocd
+docker run --detach --restart unless-stopped -p 8153:8153 gocd/gocd-server:v21.4.0
+docker run --detach --restart unless-stopped --env GO_SERVER_URL=${GO_SERVER_URL} gocd/gocd-agent-ubuntu-20.04:v21.4.0
 ```
 
 ## [kubernetes] argoCD
@@ -407,7 +408,15 @@ helm install gocd gocd/gocd --namespace gocd
 ```bash
 helm repo add argo-cd https://argoproj.github.io/argo-helm
 helm dep update charts/argo-cd/
+```
 
+1-1) values.yaml
+```yaml
+
+```
+
+1-2) install
+```bash
 helm install argo-cd charts/argo-cd/
 ```
 
@@ -442,7 +451,7 @@ EOF
 ```bash
 docker run \
   -it --rm \
-  -v "$(pwd)/certs:/mnt:rw" \
+  --volume "$(pwd)/certs:/mnt:rw" \
   docker.elastic.co/elasticsearch/elasticsearch:7.17.0 \
     bin/elasticsearch-certutil ca \
     && bin/elasticsearch-certutil cert --ca elastic-stack-ca.p12 \
@@ -549,40 +558,40 @@ WHITELIST="mydomain.com:9200"
 DATA_HOME="/data/elasticsearch"
 
 docker run \\
-  -d --restart=unless-stopped \\
+  --detach --restart=unless-stopped \\
   --privileged \\
   --network host \\
   --ulimit "memlock=-1:-1" \\
   --name "\${CONTAINER_NAME}" \\
   --hostname "\${NODE_NAME}" \\
-  -e "HOSTNAME=\${NODE_NAME}" \\
-  -e "ELASTIC_USERNAME=\${ELASTIC_USERNAME}" \\
-  -e "ELASTIC_PASSWORD=\${ELASTIC_PASSWORD}" \\
-  -e "node.name=\${NODE_NAME}" \\
-  -e "ES_JAVA_OPTS=\${ES_JAVA_OPTS}" \\
-  -e "discovery.seed_hosts=\${SEED_HOSTS}" \\
-  -e "discovery.zen.minimum_master_nodes=3" \\
-  -e "cluster.name=\${CLS_NAME}" \\
-  -e "cluster.publish.timeout=90s" \\
-  -e "cluster.initial_master_nodes=\${SEED_HOSTS}" \\
-  -e "transport.tcp.compress=true" \\
-  -e "network.host=0.0.0.0" \\
-  -e "node.master=true" \\
-  -e "node.ingest=true" \\
-  -e "node.data=true" \\
-  -e "node.ml=false" \\
-  -e "node.remote_cluster_client=true" \\
-  -e "xpack.security.enabled=true" \\
-  -e "xpack.security.http.ssl.enabled=true" \\
-  -e "xpack.security.http.ssl.keystore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
-  -e "xpack.security.http.ssl.truststore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
-  -e "xpack.security.transport.ssl.enabled=true" \\
-  -e "xpack.security.transport.ssl.verification_mode=certificate" \\
-  -e "xpack.security.transport.ssl.keystore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
-  -e "xpack.security.transport.ssl.truststore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
-  -e "reindex.remote.whitelist=\${WHITELIST}" \\
-  -v "\${DATA_HOME}/snapshot:/snapshot:rw" \\
-  -v "\${DATA_HOME}/data:/usr/share/elasticsearch/data:rw" \\
+  --env "HOSTNAME=\${NODE_NAME}" \\
+  --env "ELASTIC_USERNAME=\${ELASTIC_USERNAME}" \\
+  --env "ELASTIC_PASSWORD=\${ELASTIC_PASSWORD}" \\
+  --env "node.name=\${NODE_NAME}" \\
+  --env "ES_JAVA_OPTS=\${ES_JAVA_OPTS}" \\
+  --env "discovery.seed_hosts=\${SEED_HOSTS}" \\
+  --env "discovery.zen.minimum_master_nodes=3" \\
+  --env "cluster.name=\${CLS_NAME}" \\
+  --env "cluster.publish.timeout=90s" \\
+  --env "cluster.initial_master_nodes=\${SEED_HOSTS}" \\
+  --env "transport.tcp.compress=true" \\
+  --env "network.host=0.0.0.0" \\
+  --env "node.master=true" \\
+  --env "node.ingest=true" \\
+  --env "node.data=true" \\
+  --env "node.ml=false" \\
+  --env "node.remote_cluster_client=true" \\
+  --env "xpack.security.enabled=true" \\
+  --env "xpack.security.http.ssl.enabled=true" \\
+  --env "xpack.security.http.ssl.keystore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
+  --env "xpack.security.http.ssl.truststore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
+  --env "xpack.security.transport.ssl.enabled=true" \\
+  --env "xpack.security.transport.ssl.verification_mode=certificate" \\
+  --env "xpack.security.transport.ssl.keystore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
+  --env "xpack.security.transport.ssl.truststore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12" \\
+  --env "reindex.remote.whitelist=\${WHITELIST}" \\
+  --volume "\${DATA_HOME}/snapshot:/snapshot:rw" \\
+  --volume "\${DATA_HOME}/data:/usr/share/elasticsearch/data:rw" \\
   \${IMAGE}
 EOF
 
@@ -629,24 +638,24 @@ ELASTICSEARCH_HOSTS="https://mydomain.com:9200"
 IMAGE="mydomain.com:5000/elk/kibana:7.17.0"
 
 docker run \\
-  -d --restart=unless-stopped \\
+  --detach --restart=unless-stopped \\
   --name "\${CONTAINER_NAME}" \\
   --hostname "\${CONTAINER_NAME}" \\
   --network host \\
   --add-host "mydomain.com:172.0.0.10" \\
-  -e "SERVER_HOST=0.0.0.0" \\
-  -e "ELASTICSEARCH_HOSTS=\${ELASTICSEARCH_HOSTS}" \\
-  -e "ELASTICSEARCH_USERNAME=\${ELASTICSEARCH_USERNAME}" \\
-  -e "ELASTICSEARCH_PASSWORD=\${ELASTICSEARCH_PASSWORD}" \\
-  -e "MONITORING_ENABLED=true" \\
-  -e "NODE_OPTIONS=--max-old-space-size=1800" \\
-  -e "ELASTICSEARCH_SSL_ENABLED=true" \\
-  -e "ELASTICSEARCH_SSL_VERIFICATIONMODE=certificate" \\
-  -e "ELASTICSEARCH_SSL_KEYSTORE_PATH=/usr/share/kibana/config/elasticsearchcerts/elastic-certificates.p12" \\
-  -e "ELASTICSEARCH_SSL_KEYSTORE_PASSWORD=\"\"" \\
-  -e "SERVER_SSL_ENABLED=true" \\
-  -e "SERVER_SSL_KEYSTORE_PATH=/usr/share/kibana/config/elasticsearchcerts/elastic-certificates.p12" \\
-  -e "SERVER_SSL_KEYSTORE_PASSWORD=\"\"" \\
+  --env "SERVER_HOST=0.0.0.0" \\
+  --env "ELASTICSEARCH_HOSTS=\${ELASTICSEARCH_HOSTS}" \\
+  --env "ELASTICSEARCH_USERNAME=\${ELASTICSEARCH_USERNAME}" \\
+  --env "ELASTICSEARCH_PASSWORD=\${ELASTICSEARCH_PASSWORD}" \\
+  --env "MONITORING_ENABLED=true" \\
+  --env "NODE_OPTIONS=--max-old-space-size=1800" \\
+  --env "ELASTICSEARCH_SSL_ENABLED=true" \\
+  --env "ELASTICSEARCH_SSL_VERIFICATIONMODE=certificate" \\
+  --env "ELASTICSEARCH_SSL_KEYSTORE_PATH=/usr/share/kibana/config/elasticsearchcerts/elastic-certificates.p12" \\
+  --env "ELASTICSEARCH_SSL_KEYSTORE_PASSWORD=\"\"" \\
+  --env "SERVER_SSL_ENABLED=true" \\
+  --env "SERVER_SSL_KEYSTORE_PATH=/usr/share/kibana/config/elasticsearchcerts/elastic-certificates.p12" \\
+  --env "SERVER_SSL_KEYSTORE_PASSWORD=\"\"" \\
   \${IMAGE}
 EOF
 
