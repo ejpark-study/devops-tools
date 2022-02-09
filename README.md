@@ -91,32 +91,37 @@ vagrant package --base 67af84d2-6c61-404b-b9c6-017d4fe8bd25 --output worker2.box
 kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
 ```
 
-* calico: https://www.calicolabs.com/
+* calico: https://projectcalico.docs.tigera.io/
   * https://cwal.tistory.com/12
 
 ```bash
-curl -O https://docs.projectcalico.org/archive/v3.17/manifests/calico.yaml
+curl -O https://docs.projectcalico.org/manifests/calico.yaml
 kubectl apply -f calico.yaml
+```
+
+* calico ctl
+
+```bash
+curl -L https://github.com/projectcalico/calico/releases/download/v3.22.0/calicoctl-linux-amd64 -o /usr/local/bin/calicoctl
+chmod +x /usr/local/bin/calicoctl
 ```
 
 * cilium
 
 ```bash
+curl -LO https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin && rm cilium-linux-amd64.tar.gz
+
 cilium install
 ```
 
 ## [kubernetes] metric server
 
-metrics-server.yaml 파일의 134 번째 라인에 '--kubelet-insecure-tls'를 추가한다.
+metrics-server.yaml 파일에서 '--kubelet-insecure-tls'를 추가한다.
 
 ```bash
 wget -O metrics-server.yaml https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-
-vim +134 metrics-server.yaml
-     - args:
-        (...)
-        - --kubelet-insecure-tls
-        (...)
+sed -ire "/- --secure-port=4443/a\        - --kubelet-insecure-tls" metrics-server.yaml
 
 kubectl apply -f metrics-server.yaml
 ```
@@ -361,8 +366,8 @@ docker run \\
   --detach --restart unless-stopped \\
   --name minio \\
   --hostname minio \\
-  -p 9001:80 \\
-  -p 9000:9000 \\
+  --publish 9001:80 \\
+  --publish 9000:9000 \\
   --env "MINIO_ROOT_USER=admin" \\
   --env "MINIO_ROOT_PASSWORD=mypassword" \\
   --volume "/data/minio:/data:rw" \\

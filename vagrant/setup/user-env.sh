@@ -11,7 +11,7 @@ git clone --depth=1 "https://github.com/zsh-users/zsh-completions.git" ~/.oh-my-
 git clone --depth=1 "https://github.com/zsh-users/zsh-autosuggestions.git" ~/.oh-my-zsh/plugins/zsh-autosuggestions
 git clone --depth=1 "https://github.com/zsh-users/zsh-syntax-highlighting.git" ~/.oh-my-zsh/plugins/zsh-syntax-highlighting
 
-cat /etc/skel/.zshrc > ~/.zshrc
+cat /home/ubuntu/.setup/skel/.zshrc > ~/.zshrc
 
 # krew 설치
 krew install krew

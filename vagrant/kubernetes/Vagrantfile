@@ -60,7 +60,6 @@ Vagrant.configure("2") do |config|
     cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/apt-mirror.sh")
     cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/baseline.sh")
     cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/dev-env.sh")
-    cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/ssh-keypair.sh")
 
     # docker, kubernetes
     cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/docker.sh")
@@ -112,7 +111,6 @@ Vagrant.configure("2") do |config|
       # baseline
       cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/apt-mirror.sh")
       cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/baseline.sh")
-      cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/ssh-keypair.sh")
 
       # docker, kubernetes
       cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/docker.sh")
