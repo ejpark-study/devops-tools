@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-echo "### user-env.sh"
+echo "### oh-my-zsh.sh"
 set -x #echo on
 
 # oh my zsh

@@ -67,7 +67,7 @@ Vagrant.configure("2") do |config|
     cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/kubernetes-utils.sh")
 
     # user env.
-    cfg.vm.provision "shell", privileged: false, path: File.join(SETUP_HOME, "/user-env.sh")
+    cfg.vm.provision "shell", privileged: false, path: File.join(SETUP_HOME, "/oh-my-zsh.sh")
 
     # master
     cfg.vm.provision "shell", privileged: true, path: File.join(SETUP_HOME, "/init-master.sh"), args: [KUBERNETES_MASTER, KUBERNETES_SVC_CIDR, KUBERNETES_POD_NETWORK_CIDR, KUBERNETES_CONTEXT_NAME]

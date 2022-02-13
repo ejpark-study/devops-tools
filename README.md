@@ -20,9 +20,9 @@
 
 * https://docs.microsoft.com/en-us/windows/terminal/install 에서 터미널을 설치한다.
 
-3) Oh my posh 설치
+3) Oh my posh 설치 (Administrator)
 
-```powershell
+```shell
 Install-Module posh-git -Scope CurrentUser -Force
 Install-Module oh-my-posh -Scope CurrentUser -Force
 Install-Module -Name PSReadLine -Scope CurrentUser -Force -SkipPublisherCheck
@@ -34,19 +34,19 @@ Install-Module -Name Terminal-Icons -Repository PSGallery
 * https://www.nerdfonts.com/ 에서 폰트를 다운로드해서 압축을 해제한다.
 * 폰트를 설택후 마우스 오른쪽 클릭해서 '설치'를 선택한다.
 
-6) windows terminal 폰트 변경
+5) windows terminal 폰트 변경
 
 * 'Ctrl + ,' -> '프로필/기본값/모양/글꼴' -> 'DejaVuSansMono Nerd Font Mono' 선택 (4 에서 설치한 폰트 이름, 고정폭 폰트(Mono)를 선택한다.)
 
-8-1) $PROFILE 생성 혹은 수정
+6-1) $PROFILE 생성 혹은 수정
 
-```powershell
+```shell
 code $PROFILE
 ```
 
-8-2) 아래와 같이 설정
+6-2) 아래와 같이 설정
 
-```powershell
+```shell
 Set-Alias mpa multipass
 Set-Alias vg vagrant
 Set-Alias vbox VBoxManage
@@ -56,7 +56,6 @@ Import-Module oh-my-posh
 Import-Module Terminal-Icons
 
 Set-PSReadLineOption -PredictionSource History
-
 Set-PoshPrompt -Theme paradox
 ```
 
