@@ -180,7 +180,7 @@ docker run \\
   --volume /data/gitlab/config:/etc/gitlab \\
   --volume /data/gitlab/logs:/var/log/gitlab \\
   --volume /data/gitlab/data:/var/opt/gitlab \\
-  gitlab/gitlab-ce:14.4.2-ce.0
+  gitlab/gitlab-ce:14.7.3-ce.0
 
 docker logs -f gitlab
 EOS
@@ -258,8 +258,8 @@ docker exec -it gitlab-runner \
 * [docker/compose/releases](https://github.com/docker/compose/releases)
 
 ```bash
-wget https://github.com/docker/compose/releases/download/v2.2.3/docker-compose-linux-x86_64
-sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose && sudo chmod +x /usr/local/bin/docker-compose
+wget -O /usr/local/bin/docker-compose "https://github.com/docker/compose/releases/download/v2.2.3/docker-compose-linux-x86_64"
+sudo chmod +x /usr/local/bin/docker-compose
 
 docker-compose version
 ```
@@ -384,8 +384,8 @@ chmod +x minio.sh
 2) minio client 설치
 
 ```bash
-wget https://dl.min.io/client/mc/release/linux-amd64/mc 
-chmod +x mc && sudo mv mc /usr/local/bin/mc
+wget -O /usr/local/bin/mc "https://dl.min.io/client/mc/release/linux-amd64/mc" 
+sudo chmod +x /usr/local/bin/mc
 
 mc alias set wst http://mydomain.com:9000 admin mypassword
 mc alias list
