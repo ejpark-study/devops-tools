@@ -1,3 +1,8 @@
+
+# DEPRECATED: move to [KANS](https://github.com/ejpark78/kans.git)
+
+---
+
 # My Devops Tools (Environments): with Kubernetes
 
 쿠버네티스 환경에서 어플리케이션을 개발하고, 개발된 어플리케이션을 서비스하는 환경을 구축하는 방법에 관한 문서이다.
